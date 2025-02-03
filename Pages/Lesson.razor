@@ -1,0 +1,252 @@
+﻿@page "/lesson"
+@inject IJSRuntime JSRuntime
+
+<h1 class="text-primary text-center">Lekce psaní</h1>
+<p class="text-center">Opsat následující větu:</p>
+
+<!-- Zobrazení věty se zvýrazněním -->
+<h4 class="text-center">
+    @for (int i = 0; i < currentSentence.Length; i++)
+    {
+        if (i < userInput.Length)
+        {
+            if (userInput[i] == currentSentence[i])
+            {
+                <span class="correct-letter">@currentSentence[i]</span>
+            }
+            else
+            {
+                <span class="incorrect-letter">@currentSentence[i]</span>
+            }
+        }
+        else
+        {
+            <span>@currentSentence[i]</span>
+        }
+    }
+</h4>
+
+<!-- Vstupní pole s (případným) automatickým doplňováním -->
+<div class="text-center my-4">
+    <input @ref="inputElement"
+           value="@GetInputValue()"
+           @oninput="OnInputChanged"
+           class="form-control my-2 w-50 mx-auto"
+           placeholder="Zadejte text..." />
+    <button class="btn btn-success mt-2" @onclick="CheckAnswer">Zkontrolovat odpověď</button>
+</div>
+
+<!-- Výsledek, čas, rychlost a počet chyb -->
+<p class="text-center">
+    <span class="@(isCorrect ? "text-success" : "text-danger") font-weight-bold">@result</span>
+</p>
+<p class="text-center">Čas: @elapsedTime sekund</p>
+<p class="text-center">Rychlost: @WPM:F1 WPM</p>
+<p class="text-center">Počet chyb: @errorCount</p>
+
+<!-- Progress Bar -->
+<div class="progress my-4 w-50 mx-auto">
+    <div class="progress-bar" role="progressbar" style="width: @Progress%;" aria-valuenow="@Progress" aria-valuemin="0" aria-valuemax="100">
+        @Progress%
+    </div>
+</div>
+
+<!-- MODAL: Výběr dalšího kroku -->
+@if (showModal)
+{
+    <div class="modal-overlay">
+        <div class="modal-content">
+            <h3>@(isCorrect ? "Lekce dokončena!" : "Chybná odpověď")</h3>
+            <p>@(isCorrect ? "Co chceš dělat dál?" : "Zkus to znovu.")</p>
+
+            @if (isCorrect)
+            {
+                <button class="btn btn-primary m-2" @onclick="NextLevel">Další level</button>
+            }
+            <button class="btn btn-warning m-2" @onclick="RestartLesson">Zkusit znovu</button>
+        </div>
+    </div>
+}
+
+@code {
+    // Seznam vět – dle potřeby rozšiřte
+    private List<string> sentences = new List<string>
+    {
+        "Toto je první věta, kterou musíte opsat správně, aby se vám podařilo postoupit do další úrovně.",
+        "Druhá věta obsahuje více slov, což znamená, že budete muset pečlivě sledovat, co píšete.",
+        "Cvičení dělá mistra, a pokud se chcete stát expertem na psaní všemi deseti, musíte trénovat každý den.",
+        "Ve třetím levelu už začínáme být trochu náročnější, protože přidáváme složitější věty a interpunkci!",
+        "Dlouhé věty pomáhají procvičit rychlost psaní a zároveň zlepšit přesnost při opisování složitějších textů.",
+        "Chybné opsání této věty znamená, že si ji budete muset zopakovat, takže dávejte pozor na každé písmeno.",
+        "Výborně! Pokud jste se dostali až sem, znamená to, že se v psaní všemi deseti neustále zlepšujete!",
+        "Poslední level je zde! Napište tuto větu správně a dokážete, že jste v psaní mistři."
+    };
+
+    private int currentIndex = 0;
+    private string currentSentence => sentences[currentIndex];
+
+    // userInput obsahuje to, co uživatel skutečně zadal
+    private string userInput = "";
+    private string result = "";
+    private int elapsedTime = 0;
+    private int errorCount = 0;
+    private bool isCorrect = false;
+    private bool showModal = false;
+    private System.Timers.Timer? timer;
+    private ElementReference inputElement;
+
+    // Řídící proměnná – pokud je true, auto‑doplnění se provádí.
+    // Jakmile se objeví chyba, nastavíme ji na false a zůstane tak pro aktuální větu.
+    private bool autoCompleteEnabled = true;
+
+    // Výpočet postupu v procentech
+    private int Progress => sentences.Count > 0 ? (int)((double)(currentIndex + 1) / sentences.Count * 100) : 0;
+    // Výpočet slov za minutu (WPM)
+    private double WPM => elapsedTime > 0
+        ? (currentSentence.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length / (elapsedTime / 60.0))
+        : 0;
+
+    protected override void OnInitialized()
+    {
+        StartTimer();
+    }
+
+    /// <summary>
+    /// Vrací hodnotu, která se zobrazí ve vstupním poli.
+    /// Pokud je auto‑doplnění povoleno a zadaný text odpovídá prefixu vzorové věty, vrací se celá věta.
+    /// Jinak se vrací pouze text, který uživatel zadal.
+    /// </summary>
+    private string GetInputValue()
+    {
+        if (autoCompleteEnabled && !string.IsNullOrEmpty(userInput) && currentSentence.StartsWith(userInput))
+        {
+            return currentSentence;
+        }
+        return userInput;
+    }
+
+    /// <summary>
+    /// Metoda reagující na změnu vstupního pole.
+    /// Pokud je zadaný text neprázdný a tvoří prefix vzorové věty, a je auto‑doplnění povoleno,
+    /// označí se zbytek věty. Pokud zadaný text již není prefix, auto‑doplnění se zakáže.
+    /// Pokud uživatel vymaže celý vstup, pouze se aktualizuje uživatelský vstup.
+    /// </summary>
+    private async Task OnInputChanged(ChangeEventArgs e)
+    {
+        string newValue = e.Value?.ToString() ?? "";
+
+        // Pokud je vstup prázdný, jen aktualizujeme userInput (auto‑doplnění zůstane podle předchozího stavu)
+        if (string.IsNullOrEmpty(newValue))
+        {
+            userInput = "";
+            StateHasChanged();
+            return;
+        }
+
+        if (currentSentence.StartsWith(newValue))
+        {
+            userInput = newValue;
+            if (autoCompleteEnabled)
+            {
+                await JSRuntime.InvokeVoidAsync("setSelectionRange", inputElement, newValue.Length, currentSentence.Length);
+            }
+        }
+        else
+        {
+            // Pokud zadaný text již není prefix vzorové věty, zakážeme auto‑doplnění.
+            autoCompleteEnabled = false;
+            userInput = newValue;
+        }
+        StateHasChanged();
+    }
+
+    private void StartTimer()
+    {
+        StopTimer();
+        elapsedTime = 0;
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += (sender, e) =>
+        {
+            elapsedTime++;
+            InvokeAsync(StateHasChanged);
+        };
+        timer.Start();
+    }
+
+    private void StopTimer()
+    {
+        if (timer != null)
+        {
+            timer.Stop();
+            timer.Dispose();
+            timer = null;
+        }
+    }
+
+    // Pomocná metoda pro výpočet Levenshteinovy vzdálenosti (počet rozdílných znaků)
+    private int ComputeLevenshteinDistance(string s, string t)
+    {
+        int n = s.Length;
+        int m = t.Length;
+        var d = new int[n + 1, m + 1];
+
+        if (n == 0) return m;
+        if (m == 0) return n;
+
+        for (int i = 0; i <= n; i++) d[i, 0] = i;
+        for (int j = 0; j <= m; j++) d[0, j] = j;
+
+        for (int i = 1; i <= n; i++)
+        {
+            for (int j = 1; j <= m; j++)
+            {
+                int cost = (s[i - 1] == t[j - 1]) ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+        return d[n, m];
+    }
+
+    private void CheckAnswer()
+    {
+        StopTimer();
+        int mistakeCount = ComputeLevenshteinDistance(userInput.Trim(), currentSentence);
+        if (mistakeCount == 0)
+        {
+            result = "✅ Správně!";
+            isCorrect = true;
+        }
+        else
+        {
+            result = $"❌ Špatně! Počet chyb: {mistakeCount}";
+            isCorrect = false;
+        }
+        errorCount = mistakeCount;
+        showModal = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void NextLevel()
+    {
+        showModal = false;
+        currentIndex = (currentIndex + 1) % sentences.Count;
+        userInput = "";
+        autoCompleteEnabled = true; // resetujeme při novém levelu
+        errorCount = 0;
+        elapsedTime = 0;
+        StartTimer();
+    }
+
+    private void RestartLesson()
+    {
+        showModal = false;
+        userInput = "";
+        result = "";
+        autoCompleteEnabled = true; // resetujeme při restartu
+        errorCount = 0;
+        elapsedTime = 0;
+        StartTimer();
+    }
+}
