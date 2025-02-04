@@ -96,7 +96,7 @@
     private ElementReference inputElement;
 
     // Řídící proměnná – pokud je true, auto‑doplnění se provádí.
-    // Jakmile se objeví chyba, nastavíme ji na false a zůstane tak pro aktuální větu.
+    // Jakmile se objeví chyba, nastavíme ji na false a zůstane tak pro všechny lekce.
     private bool autoCompleteEnabled = true;
 
     // Výpočet postupu v procentech
@@ -129,13 +129,12 @@
     /// Metoda reagující na změnu vstupního pole.
     /// Pokud je zadaný text neprázdný a tvoří prefix vzorové věty, a je auto‑doplnění povoleno,
     /// označí se zbytek věty. Pokud zadaný text již není prefix, auto‑doplnění se zakáže.
-    /// Pokud uživatel vymaže celý vstup, pouze se aktualizuje uživatelský vstup.
+    /// Pokud uživatel vymaže celý vstup, pouze se aktualizuje userInput (auto‑doplnění se již neobnoví).
     /// </summary>
     private async Task OnInputChanged(ChangeEventArgs e)
     {
         string newValue = e.Value?.ToString() ?? "";
 
-        // Pokud je vstup prázdný, jen aktualizujeme userInput (auto‑doplnění zůstane podle předchozího stavu)
         if (string.IsNullOrEmpty(newValue))
         {
             userInput = "";
@@ -233,7 +232,7 @@
         showModal = false;
         currentIndex = (currentIndex + 1) % sentences.Count;
         userInput = "";
-        autoCompleteEnabled = true; // resetujeme při novém levelu
+        // Neresetujeme autoCompleteEnabled – zůstane podle předchozího stavu (tj. pokud byl vypnutý, zůstane vypnutý)
         errorCount = 0;
         elapsedTime = 0;
         StartTimer();
@@ -244,7 +243,7 @@
         showModal = false;
         userInput = "";
         result = "";
-        autoCompleteEnabled = true; // resetujeme při restartu
+        // Neresetujeme autoCompleteEnabled – pokud bylo vypnuto, zůstane vypnuté
         errorCount = 0;
         elapsedTime = 0;
         StartTimer();
